@@ -1,247 +1,201 @@
 import requests
-from bs4 import BeautifulSoup
 import csv
 import os
 import time
-from urllib.parse import urlparse
 
-def criar_pasta_se_nao_existir(nome_pasta):
-    """
-    Cria uma pasta se ela não existir
-    """
-    if not os.path.exists(nome_pasta):
-        os.makedirs(nome_pasta)
-        print(f"✅ Pasta '{nome_pasta}' criada com sucesso!")
+# ============================================================
+# FUNÇÕES AUXILIARES
+# ============================================================
 
-def obter_user_agent():
-    """
-    Retorna um User-Agent realista para evitar bloqueios
-    """
-    return {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
+def criar_pasta(nome):
+    """Cria pasta se não existir"""
+    if not os.path.exists(nome):
+        os.makedirs(nome)
 
-def baixar_foto_linkedin(url_linkedin, nome_pessoa):
-    """
-    Tenta baixar a foto do perfil do LinkedIn
-    Retorna (sucesso, caminho_arquivo, origem) ou (False, None, None) em caso de erro
-    """
+
+def extrair_username_github(url):
+    """Extrai username de URL do GitHub"""
+    # https://github.com/username -> username
+    partes = url.replace('https://', '').replace('http://', '').split('/')
+    if len(partes) >= 2:
+        return partes[1]
+    return None
+
+
+def baixar_imagem(url, nome_arquivo):
+    """Baixa imagem de uma URL e salva em disco"""
     try:
-        print(f"🔍 Tentando acessar LinkedIn de {nome_pessoa}...")
+        # Faz download da imagem
+        resposta = requests.get(url, timeout=10)
         
-        # Fazer requisição para o LinkedIn
-        headers = obter_user_agent()
-        response = requests.get(url_linkedin, headers=headers, timeout=10)
+        # Verifica se deu certo
+        if resposta.status_code != 200:
+            return False
         
-        if response.status_code != 200:
-            print(f"❌ Erro ao acessar LinkedIn: Status {response.status_code}")
-            return False, None, None
+        # Salva no arquivo
+        with open(nome_arquivo, 'wb') as arquivo:
+            arquivo.write(resposta.content)
         
-        # Parse do HTML
-        soup = BeautifulSoup(response.content, 'html.parser')
+        return True
         
-        # Estratégia 1: Procurar pela tag meta com a imagem do perfil
-        meta_imagem = soup.find('meta', property='og:image')
-        if meta_imagem and meta_imagem.get('content'):
-            url_imagem = meta_imagem['content']
-            # Verificar se é uma imagem válida (não a imagem padrão)
-            if 'sharing' not in url_imagem and 'static' not in url_imagem:
-                print(f"📸 Foto do LinkedIn encontrada: {url_imagem}")
-                return baixar_imagem(url_imagem, nome_pessoa, 'linkedin')
-        
-        # Estratégia 2: Procurar por elementos de imagem específicos
-        img_perfil = soup.find('img', {'class': ['pv-top-card-profile-picture__image', 'evi-image', 'profile-photo-edit__preview']})
-        if img_perfil and img_perfil.get('src'):
-            url_imagem = img_perfil['src']
-            if 'sharing' not in url_imagem and 'static' not in url_imagem:
-                print(f"📸 Foto do LinkedIn encontrada: {url_imagem}")
-                return baixar_imagem(url_imagem, nome_pessoa, 'linkedin')
-        
-        print("ℹ️  Nenhuma foto encontrada no LinkedIn")
-        return False, None, None
-        
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Erro de conexão com LinkedIn: {e}")
-        return False, None, None
-    except Exception as e:
-        print(f"❌ Erro inesperado no LinkedIn: {e}")
-        return False, None, None
+    except:
+        return False
+
+
+# ============================================================
+# FUNÇÕES DE DOWNLOAD POR PLATAFORMA
+# ============================================================
 
 def baixar_foto_github(url_github, nome_pessoa):
-    """
-    Tenta baixar a foto do perfil do GitHub
-    Retorna (sucesso, caminho_arquivo, origem) ou (False, None, None) em caso de erro
-    """
-    try:
-        print(f"🔍 Tentando acessar GitHub de {nome_pessoa}...")
-        
-        # Extrair username do URL do GitHub
-        parsed_url = urlparse(url_github)
-        caminho = parsed_url.path.strip('/')
-        if '/' in caminho:
-            username = caminho.split('/')[0]
-        else:
-            username = caminho
-        
-        if not username:
-            print("❌ Não foi possível extrair username do GitHub")
-            return False, None, None
-        
-        # URL do avatar do GitHub
-        url_avatar = f"https://avatars.githubusercontent.com/{username}"
-        
-        print(f"📸 Tentando baixar avatar do GitHub: {url_avatar}")
-        return baixar_imagem(url_avatar, nome_pessoa, 'github')
-        
-    except Exception as e:
-        print(f"❌ Erro ao baixar foto do GitHub: {e}")
-        return False, None, None
-
-def baixar_imagem(url_imagem, nome_pessoa, origem):
-    """
-    Baixa a imagem da URL e salva no disco
-    Retorna (sucesso, caminho_arquivo, origem)
-    """
-    try:
-        headers = obter_user_agent()
-        response = requests.get(url_imagem, headers=headers, timeout=10)
-        
-        if response.status_code != 200:
-            print(f"❌ Erro ao baixar imagem: Status {response.status_code}")
-            return False, None, None
-        
-        # Verificar se é realmente uma imagem
-        content_type = response.headers.get('content-type', '')
-        if not content_type.startswith('image/'):
-            print(f"❌ URL não é uma imagem: {content_type}")
-            return False, None, None
-        
-        # Criar nome do arquivo seguro (sem caracteres especiais)
-        nome_arquivo = f"{nome_pessoa.replace(' ', '_').replace('/', '_')}.jpg"
-        caminho_arquivo = os.path.join('fotos', nome_arquivo)
-        
-        # Salvar imagem
-        with open(caminho_arquivo, 'wb') as f:
-            f.write(response.content)
-        
-        print(f"✅ Foto salva: {caminho_arquivo}")
-        return True, caminho_arquivo, origem
-        
-    except Exception as e:
-        print(f"❌ Erro ao baixar imagem: {e}")
-        return False, None, None
-
-def processar_pessoas():
-    """
-    Função principal que processa todas as pessoas do CSV
-    """
-    # Criar pasta de fotos
-    criar_pasta_se_nao_existir('fotos')
+    """Baixa foto do perfil do GitHub"""
+    # Extrai username da URL
+    username = extrair_username_github(url_github)
+    if not username:
+        return False
     
-    # Lista para armazenar resultados
+    # URL da foto do GitHub
+    url_foto = f"https://avatars.githubusercontent.com/{username}"
+    
+    # Nome do arquivo
+    nome_arquivo = f"fotos/{nome_pessoa.replace(' ', '_')}.jpg"
+    
+    # Baixa e retorna resultado
+    return baixar_imagem(url_foto, nome_arquivo)
+
+
+def baixar_foto_linkedin(url_linkedin, nome_pessoa):
+    """Tenta baixar foto do LinkedIn (pode não funcionar sempre)"""
+    try:
+        # Acessa a página
+        resposta = requests.get(url_linkedin, timeout=10)
+        if resposta.status_code != 200:
+            return False
+        
+        # Procura pela meta tag com a imagem
+        if 'og:image' in resposta.text:
+            inicio = resposta.text.find('og:image" content="') + 19
+            fim = resposta.text.find('"', inicio)
+            url_foto = resposta.text[inicio:fim]
+            
+            # Verifica se é uma foto válida (não é o logo padrão)
+            if 'static' not in url_foto and 'sharing' not in url_foto:
+                nome_arquivo = f"fotos/{nome_pessoa.replace(' ', '_')}.jpg"
+                return baixar_imagem(url_foto, nome_arquivo)
+        
+        return False
+        
+    except:
+        return False
+
+
+# ============================================================
+# PROCESSAMENTO PRINCIPAL
+# ============================================================
+
+def processar_csv():
+    """Lê CSV e baixa todas as fotos"""
+    
+    # Cria pasta de fotos
+    criar_pasta('fotos')
+    
+    # Lista para resultados
     resultados = []
     
-    try:
-        # Ler arquivo CSV
-        with open('pessoas.csv', 'r', encoding='utf-8') as arquivo:
-            leitor = csv.DictReader(arquivo)
-            pessoas = list(leitor)
+    # Lê arquivo CSV
+    with open('pessoas.csv', 'r', encoding='utf-8') as arquivo:
+        leitor = csv.DictReader(arquivo)
+        pessoas = list(leitor)
+    
+    print(f"Total de pessoas: {len(pessoas)}\n")
+    
+    # Processa cada pessoa
+    for pessoa in pessoas:
+        nome = pessoa['nome']
+        linkedin = pessoa['linkedin']
+        github = pessoa['github']
         
-        print(f"📊 Encontradas {len(pessoas)} pessoas para processar")
+        print(f"Processando: {nome}")
         
-        for pessoa in pessoas:
-            nome = pessoa['nome']
-            linkedin = pessoa['linkedin'].strip()
-            github = pessoa['github'].strip()
-            
-            print(f"\n{'='*50}")
-            print(f"👤 Processando: {nome}")
-            print(f"🔗 LinkedIn: {linkedin}")
-            print(f"🐙 GitHub: {github}")
-            
-            sucesso = False
-            caminho_arquivo = None
-            origem = None
-            
-            # Tentar LinkedIn primeiro
-            if linkedin and linkedin.lower() != 'none':
-                sucesso, caminho_arquivo, origem = baixar_foto_linkedin(linkedin, nome)
-            
-            # Se LinkedIn falhou, tentar GitHub
-            if not sucesso and github and github.lower() != 'none':
-                sucesso, caminho_arquivo, origem = baixar_foto_github(github, nome)
-            
-            # Registrar resultado
-            if sucesso:
-                resultados.append({
-                    'nome': nome,
-                    'origem_foto': origem,
-                    'arquivo': caminho_arquivo
-                })
-                print(f"✅ {nome}: Foto baixada do {origem.upper()}")
-            else:
-                resultados.append({
-                    'nome': nome,
-                    'origem_foto': 'nenhum',
-                    'arquivo': 'none'
-                })
-                print(f"❌ {nome}: Nenhuma foto encontrada")
-            
-            # Pequena pausa para evitar bloqueios
-            time.sleep(1)
+        sucesso = False
+        origem = "nenhum"
         
-        # Salvar resultados em CSV
-        with open('resultado.csv', 'w', newline='', encoding='utf-8') as arquivo:
-            campos = ['nome', 'origem_foto', 'arquivo']
-            escritor = csv.DictWriter(arquivo, fieldnames=campos)
-            
-            escritor.writeheader()
-            for resultado in resultados:
-                escritor.writerow(resultado)
+        # Tenta LinkedIn primeiro
+        if linkedin and linkedin != 'none':
+            if baixar_foto_linkedin(linkedin, nome):
+                sucesso = True
+                origem = "linkedin"
+                print(f"  ✓ Foto baixada do LinkedIn")
         
-        print(f"\n🎉 Processamento concluído!")
-        print(f"📁 Fotos salvas em: fotos/")
-        print(f"📊 Relatório salvo em: resultado.csv")
+        # Se falhou, tenta GitHub
+        if not sucesso and github and github != 'none':
+            if baixar_foto_github(github, nome):
+                sucesso = True
+                origem = "github"
+                print(f"  ✓ Foto baixada do GitHub")
         
-        # Estatísticas
-        sucessos = sum(1 for r in resultados if r['origem_foto'] != 'nenhum')
-        print(f"📈 Estatísticas: {sucessos}/{len(resultados)} fotos baixadas com sucesso")
+        # Se nada funcionou
+        if not sucesso:
+            print(f"  ✗ Nenhuma foto encontrada")
         
-    except FileNotFoundError:
-        print("❌ Erro: Arquivo 'pessoas.csv' não encontrado!")
-        print("💡 Certifique-se de que o arquivo existe no mesmo diretório do script")
-    except Exception as e:
-        print(f"❌ Erro inesperado: {e}")
+        # Guarda resultado
+        resultados.append({
+            'nome': nome,
+            'origem': origem,
+            'sucesso': 'sim' if sucesso else 'nao'
+        })
+        
+        # Pausa de 1 segundo entre requisições
+        time.sleep(1)
+    
+    # Salva resultados em CSV
+    with open('resultado.csv', 'w', newline='', encoding='utf-8') as arquivo:
+        campos = ['nome', 'origem', 'sucesso']
+        escritor = csv.DictWriter(arquivo, fieldnames=campos)
+        escritor.writeheader()
+        escritor.writerows(resultados)
+    
+    # Mostra resumo
+    total_sucesso = sum(1 for r in resultados if r['sucesso'] == 'sim')
+    print(f"\nConcluído: {total_sucesso}/{len(resultados)} fotos baixadas")
+    print("Resultados salvos em: resultado.csv")
 
-def criar_exemplo_csv():
-    """
-    Cria um arquivo CSV de exemplo com 3 pessoas fictícias
-    """
-    dados_exemplo = [
-        {'nome': 'Ana Silva', 'linkedin': 'https://www.linkedin.com/in/ana-silva-exemplo', 'github': 'https://github.com/anaxsilva'},
-        {'nome': 'Carlos Santos', 'linkedin': 'https://www.linkedin.com/in/carlos-santos-exemplo', 'github': 'https://github.com/carlossantos'},
-        {'nome': 'Maria Oliveira', 'linkedin': 'https://www.linkedin.com/in/maria-oliveira-exemplo', 'github': 'https://github.com/mariaoliveira'}
+
+# ============================================================
+# CRIAR ARQUIVO DE EXEMPLO
+# ============================================================
+
+def criar_csv_exemplo():
+    """Cria arquivo CSV de exemplo"""
+    dados = [
+        {'nome': 'Pessoa 1', 'linkedin': 'https://linkedin.com/in/exemplo1', 'github': 'https://github.com/exemplo1'},
+        {'nome': 'Pessoa 2', 'linkedin': 'https://linkedin.com/in/exemplo2', 'github': 'https://github.com/exemplo2'},
+        {'nome': 'Pessoa 3', 'linkedin': 'none', 'github': 'https://github.com/exemplo3'}
     ]
     
     with open('pessoas.csv', 'w', newline='', encoding='utf-8') as arquivo:
         campos = ['nome', 'linkedin', 'github']
         escritor = csv.DictWriter(arquivo, fieldnames=campos)
-        
         escritor.writeheader()
-        for pessoa in dados_exemplo:
-            escritor.writerow(pessoa)
+        escritor.writerows(dados)
     
-    print("📝 Arquivo 'pessoas.csv' de exemplo criado com sucesso!")
-    print("💡 Você pode editar este arquivo com os dados reais que deseja processar")
+    print("Arquivo 'pessoas.csv' criado com dados de exemplo")
+
+
+# ============================================================
+# EXECUÇÃO
+# ============================================================
 
 if __name__ == "__main__":
-    print("🚀 Iniciando Script de Download de Fotos de Perfil")
-    print("=" * 60)
+    print("=" * 50)
+    print("DOWNLOAD DE FOTOS DE PERFIL")
+    print("=" * 50)
+    print()
     
-    # Verificar se o arquivo CSV existe
+    # Se não existir CSV, cria exemplo
     if not os.path.exists('pessoas.csv'):
-        print("ℹ️  Arquivo 'pessoas.csv' não encontrado.")
-        criar_exemplo_csv()
+        print("Arquivo 'pessoas.csv' não encontrado.")
+        criar_csv_exemplo()
+        print()
     
-    # Executar o processamento
-    processar_pessoas()
+    # Processa o CSV
+    processar_csv()
